@@ -1,6 +1,7 @@
 ﻿using LikeDislikeCommentAPI.Model;
 using LikeDislikeCommentAPI.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Server;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using System;
@@ -9,6 +10,9 @@ using System.IO;
 using System.Linq;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using Firebase.Auth;
+using System.Threading;
+using Firebase.Storage;
 
 namespace LikeDislikeCommentAPI.Controllers
 {
@@ -17,6 +21,10 @@ namespace LikeDislikeCommentAPI.Controllers
     public class VideoController : Controller
     {
         private readonly MediaPlayerContext _context;
+        private static string ApiKey = "AIzaSyBJW12L7tOxbxrvRgwN-fBs7luEyW0aGe4";
+        private static string Bucket = "mediaplayer-76215.appspot.com";
+        private static string AuthEmail = "user@gmail.com";
+        private static string AuthPassword = "user123";
 
         public VideoController(MediaPlayerContext context)
         {
@@ -61,7 +69,7 @@ namespace LikeDislikeCommentAPI.Controllers
             foreach (var item in video)
             {
                 UserWithVideo uv = new UserWithVideo();
-                User temp = _context.Users.Where(x => (x.UserId == item.UserId)).FirstOrDefault();
+                Model.User temp = _context.Users.Where(x => (x.UserId == item.UserId)).FirstOrDefault();
                 uv.VideoId = item.VideoId;
                 uv.VideoTitle = item.VideoTitle;
                 uv.VideoThumbnailPath = item.ThumbnailPath;
@@ -89,7 +97,7 @@ namespace LikeDislikeCommentAPI.Controllers
             foreach (var item in video)
             {
                 UserWithVideo uv = new UserWithVideo();
-                User temp = _context.Users.Where(x => (x.UserId == item.UserId)).FirstOrDefault();
+                Model.User temp = _context.Users.Where(x => (x.UserId == item.UserId)).FirstOrDefault();
                 uv.VideoId = item.VideoId;
                 uv.VideoTitle = item.VideoTitle;
                 uv.VideoThumbnailPath = item.ThumbnailPath;
@@ -117,7 +125,7 @@ namespace LikeDislikeCommentAPI.Controllers
             foreach (var item in vid)
             {
                 UserWithVideo uv = new UserWithVideo();
-                User temp = _context.Users.Where(x => (x.UserId == item.UserId)).FirstOrDefault();
+                Model.User temp = _context.Users.Where(x => (x.UserId == item.UserId)).FirstOrDefault();
                 uv.VideoId = item.VideoId;
                 uv.VideoTitle = item.VideoTitle;
                 uv.VideoThumbnailPath = item.ThumbnailPath;
@@ -167,9 +175,10 @@ namespace LikeDislikeCommentAPI.Controllers
         [HttpPost, DisableRequestSizeLimit]
         public async Task<ActionResult<Video>> PostVideo([FromForm] VideoReceiver videoData)
         {
+            
             string jwt = Request.Headers["jwt"];
             UsersController users = new UsersController(_context, new JwtService());
-            User user = users.Verify(jwt);
+            Model.User user = users.Verify(jwt);
             if (user is null)
             {
                 return Unauthorized();
@@ -190,21 +199,46 @@ namespace LikeDislikeCommentAPI.Controllers
             try
             {
                 var postedFile = videoData.VideoFile;
-                var uploadFolder = Path.Combine(Directory.GetCurrentDirectory(), "UploadedFiles");
+               // var uploadFolder = Path.Combine(Directory.GetCurrentDirectory(), "UploadedFiles");
                 if (postedFile.Length > 0)
                 {
-                    // 3a. read the file name of the received file
+                    //// 3a. read the file name of the received file
                     var fileName = ContentDispositionHeaderValue.Parse(postedFile.ContentDisposition)
-                        .FileName.Trim('"');
+                       .FileName.Trim('"');
 
-                    // 3b. save the file on Path
-                    var finalPath = Path.Combine(uploadFolder, fileName);
-                    finalPathReturn = finalPath;
-                    using (var fileStream = new FileStream(finalPath, FileMode.Create))
+                    //// 3b. save the file on Path
+                    //var finalPath = Path.Combine(uploadFolder, fileName);
+                    byte[] fileBytes;
+                    //finalPathReturn = finalPath;
+                    using (var memoryStream = new MemoryStream())
                     {
-                        postedFile.CopyTo(fileStream);
+                        postedFile.CopyTo(memoryStream);
+                        fileBytes = memoryStream.ToArray();
+                        
                     }
+                    var stream = new MemoryStream(fileBytes);
+                    /////////////////////////////////////////////////////////////
+                    // FirebaseStorage.Put method accepts any type of stream.
 
+                    //var stream = File.Open(@"C:\someFile.png", FileMode.Open);
+
+                    // of course you can login using other method, not just email+password
+                    var auth = new FirebaseAuthProvider(new FirebaseConfig(ApiKey));
+                    var a = await auth.SignInWithEmailAndPasswordAsync(AuthEmail, AuthPassword);                    // you can use CancellationTokenSource to cancel the upload midway
+                    var cancellation = new CancellationTokenSource();
+
+                    var task = new FirebaseStorage(
+                        Bucket,
+                        new FirebaseStorageOptions
+                        {
+                            AuthTokenAsyncFactory = () => Task.FromResult(a.FirebaseToken),
+                            ThrowOnCancel = true // when you cancel the upload, exception is thrown. By default no exception is thrown
+                })
+                        .Child("videos")
+                        .Child(fileName)                        
+                        .PutAsync(stream, cancellation.Token);
+
+                    finalPathReturn = await task;
                 }
                 else
                 {
@@ -215,7 +249,7 @@ namespace LikeDislikeCommentAPI.Controllers
 
 
                 postedFile = videoData.ThumbnailFile;
-                uploadFolder = Path.Combine(Directory.GetCurrentDirectory(), "UploadedFiles");
+                //uploadFolder = Path.Combine(Directory.GetCurrentDirectory(), "UploadedFiles");
                 if (postedFile.Length > 0)
                 {
                     // 3a. read the file name of the received file
@@ -223,12 +257,33 @@ namespace LikeDislikeCommentAPI.Controllers
                         .FileName.Trim('"');
 
                     // 3b. save the file on Path
-                    var finalPath = Path.Combine(uploadFolder, fileName);
-                    finalPathReturn = finalPath;
-                    using (var fileStream = new FileStream(finalPath, FileMode.Create))
+                    //var finalPath = Path.Combine(uploadFolder, fileName);
+                    //finalPathReturn = finalPath;
+                    byte[] fileBytes;
+                    using (var memoryStream = new MemoryStream())
                     {
-                        postedFile.CopyTo(fileStream);
+                        postedFile.CopyTo(memoryStream);
+                        fileBytes = memoryStream.ToArray();
+
                     }
+                    var stream = new MemoryStream(fileBytes);
+
+                    var auth = new FirebaseAuthProvider(new FirebaseConfig(ApiKey));
+                    var a = await auth.SignInWithEmailAndPasswordAsync(AuthEmail, AuthPassword);                    // you can use CancellationTokenSource to cancel the upload midway
+                    var cancellation = new CancellationTokenSource();
+
+                    var task = new FirebaseStorage(
+                        Bucket,
+                        new FirebaseStorageOptions
+                        {
+                            AuthTokenAsyncFactory = () => Task.FromResult(a.FirebaseToken),
+                            ThrowOnCancel = true // when you cancel the upload, exception is thrown. By default no exception is thrown
+                        })
+                        .Child("images")
+                        .Child(fileName)
+                        .PutAsync(stream, cancellation.Token);
+
+                    finalPathReturn = await task;
 
                 }
                 else

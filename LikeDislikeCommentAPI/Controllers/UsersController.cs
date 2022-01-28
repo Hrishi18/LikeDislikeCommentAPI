@@ -151,11 +151,13 @@ namespace LikeDislikeCommentAPI.Controllers
             }
 
             var jwt = _jwtService.Generate((int)user.UserId);
-
-            Response.Cookies.Append(key: "jwt", value: jwt, new Microsoft.AspNetCore.Http.CookieOptions
-            {
-                HttpOnly = true
-            });
+            Response.Headers.Add("jwt", jwt);
+            Response.Headers.Add("uname", user.Name);
+            Response.Headers.Add("uid", Convert.ToString(user.UserId));
+            //Response.Cookies.Append(key: "jwt", value: jwt, new Microsoft.AspNetCore.Http.CookieOptions
+            //{
+            //    HttpOnly = true
+            //});
             return Ok(new
             {
                 message = "success"
