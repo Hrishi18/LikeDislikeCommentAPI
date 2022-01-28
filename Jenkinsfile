@@ -3,7 +3,7 @@ pipeline {
     agent any
     // Getting code from git repo
     stages {
-        stage('Checkout') {
+        stage('Pull') {
             steps {
                 git 'https://github.com/Hrishi18/MediaPlayerReactJS.git'
             }
